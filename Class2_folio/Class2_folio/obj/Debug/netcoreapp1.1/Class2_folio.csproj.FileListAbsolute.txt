@@ -1,0 +1,10 @@
+H:\Web\Class2_folio\Class2_folio\bin\Debug\netcoreapp1.1\Class2_folio.deps.json
+H:\Web\Class2_folio\Class2_folio\bin\Debug\netcoreapp1.1\Class2_folio.runtimeconfig.json
+H:\Web\Class2_folio\Class2_folio\bin\Debug\netcoreapp1.1\Class2_folio.runtimeconfig.dev.json
+H:\Web\Class2_folio\Class2_folio\bin\Debug\netcoreapp1.1\Class2_folio.dll
+H:\Web\Class2_folio\Class2_folio\bin\Debug\netcoreapp1.1\Class2_folio.pdb
+H:\Web\Class2_folio\Class2_folio\obj\Debug\netcoreapp1.1\Class2_folio.csprojResolveAssemblyReference.cache
+H:\Web\Class2_folio\Class2_folio\obj\Debug\netcoreapp1.1\Class2_folio.csproj.CoreCompileInputs.cache
+H:\Web\Class2_folio\Class2_folio\obj\Debug\netcoreapp1.1\Class2_folio.AssemblyInfo.cs
+H:\Web\Class2_folio\Class2_folio\obj\Debug\netcoreapp1.1\Class2_folio.dll
+H:\Web\Class2_folio\Class2_folio\obj\Debug\netcoreapp1.1\Class2_folio.pdb
