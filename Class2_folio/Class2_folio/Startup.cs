@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
+using Class2_folio.Models;
 
 namespace Class2_folio
 {
@@ -29,6 +31,11 @@ namespace Class2_folio
         {
             // Add framework services.
             services.AddMvc();
+
+            services.AddDbContext<AdminMessageContext>(options =>
+                    options.UseSqlServer(Configuration.GetConnectionString("AdminMessageContext")));
+
+            
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -51,6 +58,12 @@ namespace Class2_folio
 
             app.UseMvc(routes =>
             {
+                routes.MapRoute(
+                    "postMessage",
+                    "postMessage/",
+                    new { controler = "Home", action = "PostMessage" }
+                    );
+
                 routes.MapRoute(
                     name: "default",
                     template: "{controller=Home}/{action=Index}/{id?}");
