@@ -19,6 +19,7 @@ namespace Class2_folio.Models
         public AdminMessage()
         {
             this.DateCreated = DateTime.Now;
+            // this is a test
         }
     }
 }
