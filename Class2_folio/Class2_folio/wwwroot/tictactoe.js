@@ -2,8 +2,8 @@
     constructor(canvas, gameStatus) {
         this._canvas = canvas;
         this._ctx = this._canvas.getContext('2d');
-        this._gridWidth = 3;
-        this._gridHeight = 3;
+        this._gridWidth = 4;
+        this._gridHeight = 4;
         this._gameStatus = gameStatus;
 
         this._gameWon = false;
@@ -13,9 +13,10 @@
 
     resetBoard() {
         this._board = [
-            [null, null, null],
-            [null, null, null],
-            [null, null, null]
+            [null, null, null, null],
+            [null, null, null, null],
+            [null, null, null, null],
+            [null, null, null, null]
         ];
     }
 
