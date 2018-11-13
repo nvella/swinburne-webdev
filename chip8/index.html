@@ -1,0 +1,11 @@
+<html>
+    <body>
+        <canvas width="64" height="32" id="display" style="width: 256px; height: 128px;"></canvas>
+        <script src="dist/rom.js"></script>
+        <script src="dist/chip8.js"></script>
+        <script>
+            let chip = new Chip8(document.getElementById('display'));
+            chip.render();
+        </script>
+    </body>
+</html>
