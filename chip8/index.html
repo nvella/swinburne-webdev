@@ -1,11 +1,21 @@
 <html>
     <body>
         <canvas width="64" height="32" id="display" style="width: 256px; height: 128px;"></canvas>
+        <div id="monitor">
+            <button class="btn-step">Step</button>
+            <button class="btn-start">Start</button>
+            <button class="btn-stop">Stop</button>
+            <pre class="mem">
+                Mem dump goes here
+            </pre>
+        </div>
         <script src="dist/rom.js"></script>
         <script src="dist/chip8.js"></script>
         <script>
-            let chip = new Chip8(document.getElementById('display'));
-            chip.render();
+            let monitor = new ChipMonitor(
+                document.getElementById('monitor'),
+                new Chip8(document.getElementById('display'))
+            );
         </script>
     </body>
 </html>

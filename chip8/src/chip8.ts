@@ -3,6 +3,12 @@ declare const rom: number[];
 const MAX_WORD = 255;
 const MAX_ADDR = (1 << 16) - 1;
 
+// Stack grows down from Begin to End
+const STACK_BEGIN = 0xEFF;
+const STACK_END   = 0xEA0;
+
+const xyToAddrMask = (x: number, y: number): [number, number] => [0xF00 + ((y * 64 + x) / 8 | 0), 1 << (7 - (x % 8))];
+
 interface OpParams {
     /**  addr: NNN */
     addr?: number,
@@ -18,144 +24,278 @@ interface OpParams {
 
 class Chip8 {
     canvas: HTMLCanvasElement;
+    screen: ImageData;
     rom: string;
     
     ram: number[] = [];
     regs: number[] = [];
     vf = 0; // carry register
     i = 0; // address register
-    pc = 0; // program counter 
+    pc = 0x200; // program counter 
+    
+    stack: number[] = []; // store stack separately to save time
     
     key = 0; // current key pressed
-    delay = 0; // delay timer
+    delay = 0;  // delay timer
+    delayTime: Date | null = null; // time set
     beep = 0; // beep timer
 
     constructor(canvas, program) {
         this.canvas = canvas;
+        this.screen = this.canvas.getContext('2d').createImageData(64, 32);
 
         // Clear ram
-        for(let i = 0; i < 4096; i++) this.ram[i] = 0b10101010;
+        for(let i = 0; i < 4096; i++) this.ram[i] = 0;
         // Insert rom
         for(let i = 0; i < rom.length; i++) this.ram[i] = rom[i];
         // Clear regs
-        for(let i = 0; i < 0xf; i++) this.regs[i] = 0;
+        for(let i = 0; i <= 0xf; i++) this.regs[i] = 0;
     }
 
-    tick() {
+    async tick() {
+        // Grab instruction
+        let opcode = this.ram[this.pc] << 8 | this.ram[this.pc + 1];
+        console.log(`I: ${this.i} `)
+        let increment = await this.parseIns(opcode)();
+        this.pc = (this.pc + (increment * 2)) & MAX_ADDR;
+    }
+
+    async loop() {
+        await this.tick();
         this.render();
+        setTimeout(() => this.loop(), 1);
     }
 
-    parseIns(opcode) {
-        
+    parseIns(opcode: number): () => Promise<number> {
+        let str = opcode.toString(16).padStart(4, '0').toUpperCase();
+        if(this.opcodes[str]) return () => this.opcodes[str]({}); // Found exact match
+
+        const vars: {[k: string]: keyof OpParams} = {
+            'NNN': 'addr',
+            'NN': 'const8',
+            'N': 'const4',
+            'X': 'x',
+            'Y': 'y'
+        };
+        const wildcards = ['X', 'Y', 'N'];
+
+        // Find best match
+        // Index opcodes by amount of matching literals
+        let matches = {};
+        for(let mask in this.opcodes) {
+            matches[mask] = 0;
+            // Match literals
+            for(let i = 0; i < 4; i++) {
+                if(mask[i] === str[i] || wildcards.includes(mask[i]))
+                    matches[mask]++; 
+                // else
+                //     break;
+            }
+        }
+
+        // Find best match from most amount of matched literals first.
+        for(let i = 4; i > 0; i--) {
+            for(let k in matches) {
+                if(matches[k] === i) {
+                    // Match located
+                    // Fill variables
+                    let p: OpParams = {};
+                    for(let v in vars) { if(k.includes(v)) p[vars[v]] = parseInt(str.slice(k.indexOf(v), k.indexOf(v) + v.length), 16); }
+                    return () => {
+                        console.log(`PC ${this.pc.toString(16)} Op ${str} Match ${k} OpParams ${JSON.stringify(p)} Regs ${JSON.stringify(this.regs)}`);
+                        return this.opcodes[k](p);
+                    };
+                }
+            }
+        }
     }
 
-    opcodes: {[opcode: string]: (p?: OpParams) => Promise<number | void>} = {
-
-        '0NNN': async ()  => {},
-        '00E0': async ()  => { for(let i = 0xf00; i <= 0xfff; i++) this.ram[i] = 0; }, // clear display
-        '00EE': async ()  => { /* TODO do stack shit */ },
+    opcodes: {[opcode: string]: (p: OpParams) => Promise<number>} = {
+        '0NNN': async (p) => 0,
+        '00E0': async (p) => { for(let i = 0xf00; i <= 0xfff; i++) this.ram[i] = 0; return 1; }, // clear display
+        '00EE': async (p) => { if(this.stack.length > 0) this.pc = this.stackPop(); return 1; }, // return
         '1NNN': async (p) => { this.pc = p.addr; return 0; },
-        '2NNN': async (p) => { /* TODO stack */ },
-        '3XNN': async (p) => { if(this.regs[p.x] === p.const8) return 2; },
-        '4XNN': async (p) => { if(this.regs[p.x] !== p.const8) return 2; },
-        '5XY0': async (p) => { if(this.regs[p.x] !== this.regs[p.y]) return 2; },
+        '2NNN': async (p) => { this.stackPush(this.pc); this.pc = p.addr; return 0; }, // call fn
+        '3XNN': async (p) => (this.regs[p.x] === p.const8) ? 2 : 1,
+        '4XNN': async (p) => (this.regs[p.x] !== p.const8) ? 2 : 1,
+        '5XY0': async (p) => (this.regs[p.x] !== this.regs[p.y]) ? 2 : 1,
 
-        '6XNN': async (p) => { this.regs[p.x] = p.const8; },
-        '7XNN': async (p) => { // Handle add const8 with carry
-            this.vf = (this.regs[p.x] + p.const8) > MAX_WORD ? 1 : 0;
-            this.regs[p.x] = (this.regs[p.x] + p.const8) & MAX_WORD; 
-        },
+        '6XNN': async (p) => { this.regs[p.x] = p.const8; return 1; },
+        '7XNN': async (p) => { this.regs[p.x] = (this.regs[p.x] + p.const8) & MAX_WORD; return 1; },
 
-        '8XY0': async (p) => { this.regs[p.x] = this.regs[p.y]; },
-        '8XY1': async (p) => { this.regs[p.x] |= this.regs[p.y]; },
-        '8XY2': async (p) => { this.regs[p.x] &= this.regs[p.y]; },
-        '8XY3': async (p) => { this.regs[p.x] ^= this.regs[p.y]; },
+        '8XY0': async (p) => { this.regs[p.x] = this.regs[p.y]; return 1; },
+        '8XY1': async (p) => { this.regs[p.x] |= this.regs[p.y]; return 1; },
+        '8XY2': async (p) => { this.regs[p.x] &= this.regs[p.y]; return 1; },
+        '8XY3': async (p) => { this.regs[p.x] ^= this.regs[p.y]; return 1; },
 
         '8XY4': async (p) => { // Handle add with carry
             this.vf = (this.regs[p.x] + this.regs[p.y]) > MAX_WORD ? 1 : 0;
             this.regs[p.x] = (this.regs[p.x] + this.regs[p.y]) & MAX_WORD; 
+            return 1;
         },
         '8XY5': async (p) => { // Handle sub with carry
             this.vf = (this.regs[p.x] - this.regs[p.y]) < 0 ? 0 : 1;
             this.regs[p.x] = (this.regs[p.x] - this.regs[p.y]) & MAX_WORD; 
+            return 1;
         },
         '8XY6': async (p) => { // store LSB in VF and shift right by one
             this.vf = this.regs[p.x] & 1;
             this.regs[p.x] >>= 1; 
+            return 1;
         },
         '8XY7': async (p) => { // Handle sub with carry
             this.vf = (this.regs[p.y] - this.regs[p.x]) < 0 ? 0 : 1;
             this.regs[p.x] = (this.regs[p.y] - this.regs[p.x]) & MAX_WORD; 
+            return 1;
         },
         '8XYE': async (p) => { // Store MSB in VF and shift left by one
             this.vf = (this.regs[p.x] & 128) ? 1 : 0;
             this.regs[p.x] <<= 1; 
+            return 1;
         },
 
         '9XY0': async (p) => (this.regs[p.x] != this.regs[p.y]) ? 2 : 1,
-        'ANNN': async (p) => { this.i = p.addr; },
-        'BNNN': async (p) => { this.pc = (p.addr + this.regs[0]) & MAX_ADDR; },
-        'CXNN': async (p) => { this.regs[p.x] = (Math.random() * MAX_WORD + p.const8) & MAX_WORD; },
+        'ANNN': async (p) => { this.i = p.addr;  return 1; },
+        'BNNN': async (p) => { this.pc = (p.addr + this.regs[0]) & MAX_ADDR; return 1; },
+        'CXNN': async (p) => { this.regs[p.x] = (Math.random() * MAX_WORD | 0) & p.const8; return 1; },
         
-        'DXYN': async (p) => { /* draw sprite */ },
+        'DXYN': async (p) => { this.drawSprite(this.i, p.const4, this.regs[p.x], this.regs[p.y]); return 1; },
         
         'EX9E': async (p) => (this.key === this.regs[p.x]) ? 2 : 1,
         'EXA1': async (p) => (this.key !== this.regs[p.x]) ? 2 : 1,
 
-        'FX07': async (p) => { this.regs[p.x] = this.delay; }, 
-        'FX0A': async (p) => { this.regs[p.x] = await this.getKey(); },
-        'FX15': async (p) => { this.delay = this.regs[p.x]; },
-        'FX18': async (p) => { this.beep = this.regs[p.x]; },
+        'FX07': async (p) => { 
+            this.regs[p.x] = this.delayTime ? 
+                Math.max(this.delay - ((<any>new Date() - <any>this.delayTime) / (1000 / 60)), 0) | 0 : 0; 
+                return 1; 
+        }, 
+        'FX0A': async (p) => { this.regs[p.x] = await this.getKey(); return 1; },
+        'FX15': async (p) => { this.delay = this.regs[p.x]; this.delayTime = new Date(); return 1; },
+        'FX18': async (p) => { this.beep = this.regs[p.x]; return 1; },
 
-        'FX1E': async (p) => { this.i = (this.i + this.regs[p.x]) & MAX_ADDR; },
-        'FX29': async (p) => { this.i = Math.max(this.regs[p.x] * 5, 15*5); },
+        'FX1E': async (p) => { this.i = (this.i + this.regs[p.x]) & MAX_ADDR; return 1; },
+        'FX29': async (p) => { this.i = Math.max(this.regs[p.x] * 5, 15*5); return 1; },
         
         'FX33': async (p) => { // Binary coded decimal
             this.ram[this.i]     = (this.regs[p.x] / 100 | 0) % 100;
             this.ram[this.i + 1] = (this.regs[p.x] / 10 | 0)  % 10;
             this.ram[this.i + 2] =  this.regs[p.x]            % 10;
+            return 1;
         },
 
         'FX55': async (p) => { // Reg dump
             for(let i = 0; i <= p.x; i++) this.ram[this.i + i] = this.regs[i];
+            return 1;
         },
         'FX65': async (p) => { // Reg load
             for(let i = 0; i <= p.x; i++) this.regs[i] = this.ram[this.i + i];
+            return 1;
         }
      }
 
-    stackPush(data) {
-
+    stackPush(data: number): void {
+        data = data & MAX_ADDR; // Clamp address
+        this.stack.push(data);
     }
 
-    stackPop(data) {
-        
+    stackPop(): number {
+        return this.stack.pop();
+    }
+
+    drawSprite(spriteAddr: number, height: number, beginX: number, beginY: number): void {
+        this.vf = 0;
+        for(let y = beginY; y < beginY + height; y++) {
+            for(let x = beginX; x < beginX + 8; x++) {
+                let addr = xyToAddrMask(x, y)[0];
+                let mask = xyToAddrMask(x, y)[1];
+                if((this.ram[addr] & mask) > 0) this.vf = 1; // Set the VF flag if a pixel has collided
+
+                let spriteMask = 1 << (7 - x);
+                let xor = mask & ((spriteAddr[y - beginY] & spriteMask) > 0 ? 255 : 0);
+                this.ram[addr] ^= mask;
+            }
+        }
     }
   
-    render() {
+    render(): void {
         let ctx = this.canvas.getContext('2d');
+        let id = ctx.createImageData(64,32); // only do this once per page
+        let d  = id.data;                        // only do this once per page
 
         for(let y = 0; y < 32; y++) {
             for(let x = 0; x < 64; x++) {
-                let i = 0xF00 + Math.floor((y * 64 + x) / 8);
-                let mask = 1 << (7 - (x % 8));
-
+                let i = xyToAddrMask(x, y)[0]; // 0xF00 + ((y * 64 + x) / 8 | 0);
+                let mask = xyToAddrMask(x, y)[1];
+                // this.ram[i] = Math.random() * 255 | 0;
                 let val = (this.ram[i] & mask) > 0 ? 255 : 0;
-
-                let id = ctx.createImageData(1,1); // only do this once per page
-                let d  = id.data;                        // only do this once per page
-                d[0]   = val;
-                d[1]   = val;
-                d[2]   = val;
-                d[3]   = 255;
-                ctx.putImageData( id, x, y );     
+                
+                d[(y * 64 * 4) + (x * 4)]     = val;
+                d[(y * 64 * 4) + (x * 4) + 1] = val;
+                d[(y * 64 * 4) + (x * 4) + 2] = val;
+                d[(y * 64 * 4) + (x * 4) + 3] = 255;
             }
         }
+
+        ctx.putImageData( id, 0, 0 );
     }
 
     // Blocks until key is pressed, returns as ascii
     getKey(): Promise<number> {
         // TODO implement
         return new Promise<number>((resolve) => setTimeout(() => resolve(0), 1000));
+    }
+}
+
+class ChipMonitor {
+    form: HTMLDivElement;
+    memDump: HTMLPreElement;
+    
+    chip: Chip8;
+    interval: number;
+
+    constructor(form: HTMLDivElement, chip: Chip8) {
+        this.form = form;
+        this.chip = chip;
+        this.memDump = <any>this.form.getElementsByClassName('mem')[0];
+
+        (<HTMLButtonElement>this.form.getElementsByClassName("btn-step")[0]).onclick =
+            this.onStep;
+
+        (<HTMLButtonElement>this.form.getElementsByClassName("btn-start")[0]).onclick =
+            this.onStart;
+
+        (<HTMLButtonElement>this.form.getElementsByClassName("btn-stop")[0]).onclick =
+            this.onStop;
+    }
+
+    onStep = async () => {
+        await this.chip.tick();
+        this.chip.render();
+        this.renderMem();
+    };
+
+    onStart = () => {
+        this.interval = setInterval(this.onStep, 1);
+    };
+
+    onStop = async () => {
+        clearInterval(this.interval);
+    };
+
+    pretty = (addr) => addr.toString(16).toUpperCase().padStart(4, '0');
+
+    renderMem() {
+        let dump = `PC: ${this.pretty(this.chip.pc)} I: ${this.pretty(this.chip.i)}\n`;
+        for(let i = 0; i < 16; i++) { dump += `V${i.toString(16)}: ${this.chip.regs[i]} `; }
+        dump += `\ndelay: ${Math.max(this.chip.delay - ((<any>new Date() - <any>this.chip.delayTime) / (1000 / 60)), 0) | 0} beep: ${this.chip.beep}\n`;
+        for(let i in this.chip.ram) {
+            let addr = parseInt(i);
+            if(addr % 32 == 0) dump += this.pretty(addr) + ': ';
+            if(this.chip.pc === addr || this.chip.pc + 1 === addr) dump += "<b>";
+            dump += this.chip.ram[i].toString(16).toUpperCase().padStart(2, '0') + ' ';
+            if(this.chip.pc === addr || this.chip.pc + 1 === addr) dump += "</b>";
+            if(addr % 32 == 31) dump += "\n";
+        }
+        this.memDump.innerHTML = dump;
     }
 }
