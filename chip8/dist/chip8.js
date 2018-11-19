@@ -6,7 +6,7 @@ const STACK_END = 0xEA0;
 const VRAM_BEGIN = 0xF00;
 const xyToAddrMask = (x, y, bufWidth) => [((y * bufWidth + x) / 8 | 0), 1 << (7 - (x % 8))];
 class Chip8 {
-    constructor(canvas, program) {
+    constructor(canvas, audioCtx, program) {
         this.ram = [];
         this.regs = [];
         this.i = 0; // address register
@@ -15,7 +15,7 @@ class Chip8 {
         this.key = 0; // current key pressed
         this.delay = 0; // delay timer
         this.delayTime = null; // time set
-        this.beep = 0; // beep timer
+        this.beepTimeout = null; // beep timeout
         this.opcodesCompiled = {};
         this.opcodes = {
             '0NNN': async (p) => 0,
@@ -66,14 +66,10 @@ class Chip8 {
             'DXYN': async (p) => { this.regs[0xf] = this.drawSprite(this.i, p.const4, this.regs[p.x], this.regs[p.y]) ? 1 : 0; return 1; },
             'EX9E': async (p) => (this.key === this.regs[p.x]) ? 2 : 1,
             'EXA1': async (p) => (this.key !== this.regs[p.x]) ? 2 : 1,
-            'FX07': async (p) => {
-                this.regs[p.x] = this.delayTime ?
-                    Math.max(this.delay - ((new Date() - this.delayTime) / (1000 / 60)), 0) | 0 : 0;
-                return 1;
-            },
+            'FX07': async (p) => { this.regs[p.x] = this.getDelay(); return 1; },
             'FX0A': async (p) => { this.regs[p.x] = await this.getKey(); return 1; },
-            'FX15': async (p) => { this.delay = this.regs[p.x]; this.delayTime = new Date(); return 1; },
-            'FX18': async (p) => { this.beep = this.regs[p.x]; return 1; },
+            'FX15': async (p) => { this.setDelay(this.regs[p.x]); return 1; },
+            'FX18': async (p) => { this.setBeep(this.regs[p.x]); return 1; },
             'FX1E': async (p) => { this.i = (this.i + this.regs[p.x]) & MAX_ADDR; return 1; },
             'FX29': async (p) => { this.i = Math.min(this.regs[p.x] * 5, 15 * 5); return 1; },
             'FX33': async (p) => {
@@ -93,7 +89,9 @@ class Chip8 {
                 return 1;
             }
         };
+        this.getDelay = () => this.delayTime ? Math.max(this.delay - ((new Date() - this.delayTime) / (1000 / 60)), 0) | 0 : 0;
         this.canvas = canvas;
+        this.audioContext = audioCtx;
         this.screen = this.canvas.getContext('2d').createImageData(64, 32);
         // Clear ram
         for (let i = 0; i < 4096; i++)
@@ -106,6 +104,14 @@ class Chip8 {
             this.regs[i] = 0;
         // Compile opcodes
         this.compileOpcodes();
+        // Create beeper if audio context exists
+        if (this.audioContext) {
+            this.beepOsc = this.audioContext.createOscillator();
+            this.beepOsc.type = "square";
+            this.beepOsc.frequency.value = 0;
+            this.beepOsc.connect(this.audioContext.destination);
+            this.beepOsc.start();
+        }
     }
     async step() {
         // Grab instruction
@@ -169,6 +175,21 @@ class Chip8 {
     stackPop() {
         return this.stack.pop();
     }
+    setDelay(delay) {
+        this.delay = delay;
+        this.delayTime = new Date();
+    }
+    setBeep(time) {
+        if (!this.audioContext)
+            return;
+        if (this.beepTimeout)
+            clearTimeout(this.beepTimeout);
+        this.beepTimeout = setTimeout(() => {
+            this.beepOsc.frequency.value = 0;
+            this.beepTimeout = null;
+        }, 1 / 60 * time * 1000);
+        this.beepOsc.frequency.value = 440;
+    }
     drawSprite(spriteBegin, height, beginX, beginY) {
         console.log(`Sprite ${spriteBegin.toString(16)} height ${height}`);
         let clip = false;
@@ -226,11 +247,14 @@ class ChipMonitor {
             this.running = true;
             const loop = async () => {
                 if (this.running) {
-                    try {
-                        await this.onStep();
-                    }
-                    catch (e) {
-                        console.error(e);
+                    for (let i = 0; i < 2; i++) {
+                        try {
+                            await this.onStep();
+                        }
+                        catch (e) {
+                            console.error(e);
+                            return;
+                        }
                     }
                     setTimeout(loop, 0);
                 }
@@ -256,7 +280,7 @@ class ChipMonitor {
         for (let i = 0; i < 16; i++) {
             dump += `V${i.toString(16)}: ${this.chip.regs[i]} `;
         }
-        dump += `\ndelay: ${Math.max(this.chip.delay - ((new Date() - this.chip.delayTime) / (1000 / 60)), 0) | 0} beep: ${this.chip.beep}\n`;
+        dump += `\ndelay: ${Math.max(this.chip.delay - ((new Date() - this.chip.delayTime) / (1000 / 60)), 0) | 0}\n`;
         for (let i in this.chip.ram) {
             let addr = parseInt(i);
             if (addr % 32 == 0)

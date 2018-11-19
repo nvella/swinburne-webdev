@@ -27,6 +27,7 @@ class Chip8 {
     canvas: HTMLCanvasElement;
     screen: ImageData;
     rom: string;
+    audioContext: AudioContext;
     
     ram: number[] = [];
     regs: number[] = [];
@@ -36,9 +37,12 @@ class Chip8 {
     stack: number[] = []; // store stack separately to save time
     
     key = 0; // current key pressed
+    
     delay = 0;  // delay timer
     delayTime: Date | null = null; // time set
-    beep = 0; // beep timer
+
+    beepTimeout: number | null = null; // beep timeout
+    beepOsc: OscillatorNode;
 
     opcodesCompiled: {[opcode: number]: () => Promise<number>} = {};
     opcodes: {[opcode: string]: (p: OpParams) => Promise<number>} = {
@@ -95,14 +99,10 @@ class Chip8 {
         'EX9E': async (p) => (this.key === this.regs[p.x]) ? 2 : 1,
         'EXA1': async (p) => (this.key !== this.regs[p.x]) ? 2 : 1,
 
-        'FX07': async (p) => { 
-            this.regs[p.x] = this.delayTime ? 
-                Math.max(this.delay - ((<any>new Date() - <any>this.delayTime) / (1000 / 60)), 0) | 0 : 0; 
-                return 1; 
-        }, 
+        'FX07': async (p) => { this.regs[p.x] = this.getDelay(); return 1; }, 
         'FX0A': async (p) => { this.regs[p.x] = await this.getKey(); return 1; },
-        'FX15': async (p) => { this.delay = this.regs[p.x]; this.delayTime = new Date(); return 1; },
-        'FX18': async (p) => { this.beep = this.regs[p.x]; return 1; },
+        'FX15': async (p) => { this.setDelay(this.regs[p.x]); return 1; },
+        'FX18': async (p) => { this.setBeep(this.regs[p.x]); return 1; },
 
         'FX1E': async (p) => { this.i = (this.i + this.regs[p.x]) & MAX_ADDR; return 1; },
         'FX29': async (p) => { this.i = Math.min(this.regs[p.x] * 5, 15*5); return 1; },
@@ -124,8 +124,9 @@ class Chip8 {
         }
     }
 
-    constructor(canvas, program) {
+    constructor(canvas: HTMLCanvasElement, audioCtx?: AudioContext, program?: any) {
         this.canvas = canvas;
+        this.audioContext = audioCtx;
         this.screen = this.canvas.getContext('2d').createImageData(64, 32);
 
         // Clear ram
@@ -137,6 +138,15 @@ class Chip8 {
 
         // Compile opcodes
         this.compileOpcodes();
+
+        // Create beeper if audio context exists
+        if(this.audioContext) {
+            this.beepOsc = this.audioContext.createOscillator();
+            this.beepOsc.type = "square";
+            this.beepOsc.frequency.value = 0;
+            this.beepOsc.connect(this.audioContext.destination);
+            this.beepOsc.start();
+        }
     }
 
     async step() {
@@ -203,6 +213,23 @@ class Chip8 {
 
     stackPop(): number {
         return this.stack.pop();
+    }
+
+    setDelay(delay: number) {
+        this.delay = delay; 
+        this.delayTime = new Date()
+    }
+
+    getDelay = () => this.delayTime ? Math.max(this.delay - ((<any>new Date() - <any>this.delayTime) / (1000 / 60)), 0) | 0 : 0;
+
+    setBeep(time: number) {
+        if(!this.audioContext) return;
+        if(this.beepTimeout) clearTimeout(this.beepTimeout);
+        this.beepTimeout = setTimeout(() => {
+            this.beepOsc.frequency.value = 0;
+            this.beepTimeout = null;
+        }, 1/60 * time * 1000);
+        this.beepOsc.frequency.value = 440;
     }
 
     drawSprite(spriteBegin: number, height: number, beginX: number, beginY: number): boolean {
@@ -291,12 +318,15 @@ class ChipMonitor {
         this.running = true;
         const loop = async () => {
             if(this.running) {
-                try {
-                    await this.onStep();
-                } catch(e) {
-                    console.error(e);
+                for(let i = 0; i < 2; i++) {
+                    try {
+                        await this.onStep();
+                    } catch(e) {
+                        console.error(e);
+                        return; 
+                    }
                 }
-                
+
                 setTimeout(loop, 0);
             }
         };
@@ -312,7 +342,7 @@ class ChipMonitor {
     renderMem() {
         let dump = `PC: ${this.pretty(this.chip.pc)} I: ${this.pretty(this.chip.i)}\n`;
         for(let i = 0; i < 16; i++) { dump += `V${i.toString(16)}: ${this.chip.regs[i]} `; }
-        dump += `\ndelay: ${Math.max(this.chip.delay - ((<any>new Date() - <any>this.chip.delayTime) / (1000 / 60)), 0) | 0} beep: ${this.chip.beep}\n`;
+        dump += `\ndelay: ${Math.max(this.chip.delay - ((<any>new Date() - <any>this.chip.delayTime) / (1000 / 60)), 0) | 0}\n`;
         for(let i in this.chip.ram) {
             let addr = parseInt(i);
             if(addr % 32 == 0) dump += this.pretty(addr) + ': ';

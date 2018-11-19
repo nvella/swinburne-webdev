@@ -39,7 +39,7 @@
         <script>
             let monitor = new ChipMonitor(
                 document.getElementById('monitor'),
-                new Chip8(document.getElementById('display'))
+                new Chip8(document.getElementById('display'), new AudioContext())
             );
         </script>
     </body>
