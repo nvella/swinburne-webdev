@@ -1,0 +1,11 @@
+<html>
+    <body>
+        <canvas id="canvas" width="640" height="480"></canvas>
+        <div id="info"></div>
+    </body>
+    <script src="raycast.js"></script>
+    <script>
+        let raycast = new Raycast(document.getElementById('canvas'), document.getElementById('info'));
+        raycast.start();
+    </script>
+</html>
