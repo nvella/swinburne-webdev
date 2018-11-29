@@ -15,8 +15,10 @@ var KEY_W = 87;
 var KEY_A = 65;
 var KEY_S = 83;
 var KEY_D = 68;
-var MOVEMENT = .5;
+var MOVEMENT = .1;
 var RENDER_DISTANCE = 256;
+var MAP_SCALE = 64;
+var MAP_BLIP = 1;
 var mod = function (x, n) { return (x % n + n) % n; };
 var getLineIntersection = function (p0, p1, p2, p3) {
     var s1x, s1y, s2x, s2y;
@@ -33,10 +35,25 @@ var getLineIntersection = function (p0, p1, p2, p3) {
     }
     return null; // No collision
 };
+var Colour = /** @class */ (function () {
+    function Colour(r, g, b) {
+        var _this = this;
+        this.mul = function (mul) { return new Colour(_this.r * mul, _this.g * mul, _this.b * mul); };
+        this.rep = function () { return "rgba(" + _this.r + ", " + _this.g + ", " + _this.b + ", 1.0)"; };
+        this.r = r;
+        this.g = g;
+        this.b = b;
+    }
+    return Colour;
+}());
 var Raycast = /** @class */ (function () {
-    function Raycast(canvas, info) {
+    function Raycast(canvas, info, map) {
         this.entities = [
-            { pos: new Vect(1, 1), color: '#f00' }
+            { pos: new Vect(5, 5), color: new Colour(0xff, 0x00, 0x00) },
+            { pos: new Vect(6, 5), color: new Colour(0xff, 0xff, 0x00) },
+            { pos: new Vect(7, 5), color: new Colour(0xff, 0x00, 0x00) },
+            { pos: new Vect(8, 5), color: new Colour(0xff, 0x00, 0x00) },
+            { pos: new Vect(9, 5), color: new Colour(0xff, 0x00, 0xff) }
             //{pos: new Vect(2, 1), color: '#0f0'},
             //{pos: new Vect(3, 1), color: '#00f'},
             //{pos: new Vect(1, 2), color: '#ff0'},
@@ -46,11 +63,47 @@ var Raycast = /** @class */ (function () {
         this.angle = 0.0; // 0 to 360
         this.pov = 80;
         this.keys = {};
+        this.i = 0;
         this.canvas = canvas;
         this.info = info;
         this.ctx = canvas.getContext('2d');
+        this.map = map;
+        this.mapCtx = map.getContext('2d');
     }
+    Raycast.prototype.drawMapBlip = function (v) {
+        this.mapCtx.beginPath();
+        this.mapCtx.arc(v.x * MAP_SCALE, v.y * MAP_SCALE, MAP_BLIP, 0, 2 * Math.PI);
+        this.mapCtx.stroke();
+    };
+    Raycast.prototype.drawMapLine = function (l1, l2) {
+        this.mapCtx.beginPath();
+        this.mapCtx.moveTo(l1.x * MAP_SCALE, l1.y * MAP_SCALE);
+        this.mapCtx.lineTo(l2.x * MAP_SCALE, l2.y * MAP_SCALE);
+        this.mapCtx.stroke();
+    };
+    Raycast.prototype.drawMap = function () {
+        // do a backflip
+        this.mapCtx.clearRect(0, 0, this.map.width, this.map.height);
+        for (var _i = 0, _a = this.entities; _i < _a.length; _i++) {
+            var entity = _a[_i];
+            this.mapCtx.fillStyle = entity.color.rep();
+            this.mapCtx.fillRect(entity.pos.x * MAP_SCALE, entity.pos.y * MAP_SCALE, MAP_SCALE, MAP_SCALE);
+        }
+        this.mapCtx.fillStyle = 'black';
+        this.drawMapBlip(this.pos);
+        this.mapCtx.beginPath();
+        this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
+        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle - this.pov / 2))) * MAP_SCALE, (this.pos.y - Math.cos((Math.PI / 180) * (this.angle - this.pov / 2))) * MAP_SCALE);
+        this.mapCtx.stroke();
+        this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
+        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle + this.pov / 2))) * MAP_SCALE, (this.pos.y - Math.cos((Math.PI / 180) * (this.angle + this.pov / 2))) * MAP_SCALE);
+        this.mapCtx.stroke();
+        this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
+        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * this.angle)) * MAP_SCALE, (this.pos.y - Math.cos((Math.PI / 180) * this.angle)) * MAP_SCALE);
+        this.mapCtx.stroke();
+    };
     Raycast.prototype.draw = function () {
+        this.drawMap();
         for (var x = 0; x < this.canvas.width; x++) {
             this.ctx.strokeStyle = "#000";
             this.ctx.beginPath();
@@ -62,18 +115,19 @@ var Raycast = /** @class */ (function () {
             var ray = this.sendRay(this.pos, relAngle);
             if (ray) {
                 var height = this.canvas.height / ray.distance;
-                this.ctx.strokeStyle = ray.entity.color;
+                this.ctx.strokeStyle = (ray.entity.color.mul(ray.i < 2 ? 1 : 0.8)).rep();
                 this.ctx.beginPath();
                 this.ctx.moveTo(x, (this.canvas.height / 2) - (height / 2));
                 this.ctx.lineTo(x, (this.canvas.height / 2) + (height / 2));
                 this.ctx.stroke();
+                this.drawMapLine(this.pos, ray.dst);
             }
         }
         this.info.innerHTML = "x: " + this.pos.x + " y: " + this.pos.y + " a: " + this.angle;
     };
     // Returns a Ray if the ray hit something
     Raycast.prototype.sendRay = function (vect, angle) {
-        var dists = [];
+        var hits = [];
         for (var _i = 0, _a = this.entities; _i < _a.length; _i++) {
             var entity = _a[_i];
             var walls = [
@@ -84,7 +138,6 @@ var Raycast = /** @class */ (function () {
                 [new Vect(entity.pos.x, entity.pos.y + 1), new Vect(entity.pos.x + 1, entity.pos.y + 1)],
             ];
             var i = 0;
-            var temp = ['#f00', '#0f0', '#00f', '#ff0'];
             for (var _b = 0, walls_1 = walls; _b < walls_1.length; _b++) {
                 var wall = walls_1[_b];
                 var p0 = vect;
@@ -93,22 +146,20 @@ var Raycast = /** @class */ (function () {
                 var p3 = wall[1];
                 var hit = getLineIntersection(p0, p1, p2, p3);
                 if (hit)
-                    dists.push({
+                    hits.push({
                         src: vect,
                         angle: angle,
                         dst: hit,
-                        entity: {
-                            pos: entity.pos,
-                            color: temp[i]
-                        },
-                        distance: Math.sqrt(Math.pow((hit.x - vect.x), 2) + Math.pow((hit.y - vect.y), 2))
+                        entity: entity,
+                        distance: Math.sqrt(Math.pow(Math.abs(hit.x - vect.x), 2) + Math.pow(Math.abs(hit.y - vect.y), 2)),
+                        i: i
                     });
                 i++;
             }
         }
-        if (dists.length < 1)
+        if (hits.length < 1)
             return null;
-        return dists.sort(function (o) { return o.distance; })[0] || null;
+        return hits.sort(function (h1, h2) { return h1.distance - h2.distance; })[0] || null;
     };
     Raycast.prototype.update = function () {
         // Handle input
@@ -126,6 +177,9 @@ var Raycast = /** @class */ (function () {
         }
         // Draw
         this.draw();
+        this.entities[0].pos.x = Math.sin((Math.PI / 180) * this.i) + 3;
+        this.entities[0].pos.y = Math.cos((Math.PI / 180) * this.i) + 3;
+        this.i++;
     };
     Raycast.prototype.start = function () {
         var _this = this;
