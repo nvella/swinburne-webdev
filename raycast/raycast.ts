@@ -28,7 +28,22 @@ class Colour {
     rep = () => `rgba(${this.r}, ${this.g}, ${this.b}, 1.0)`;
 }
 
-interface Ray {
+enum HitActionType {
+    Render,
+    Rewrite
+}
+
+type HitAction = {
+    type: HitActionType.Render, 
+} | {
+    type: HitActionType.Rewrite, 
+    rewrite: {
+        src: Vect,
+        angle: number
+    }
+};
+
+interface IRay {
     src: Vect;
     angle: number;
     
@@ -45,11 +60,15 @@ interface IMaterial {
     /**
      * @param r The responsible Ray
      */
-    getStripe(r?: Ray): Colour[];
+    getStripe(r?: IRay): Colour[];
 }
 
 class ColourMaterial extends Colour implements IMaterial {
     getStripe = () => [this];
+}
+
+class XTestMaterial implements IMaterial {
+    getStripe = (r: IRay) => r ? [new Colour(Math.abs(255 - r.distance * 8), 255, Math.abs(r.distance * 8))] : [new Colour(255, 0, 0)];
 }
 
 class Plane {
@@ -60,7 +79,21 @@ class Plane {
     constructor(v0: Vect, v1: Vect, mat?: IMaterial) {
         this.v0 = v0;
         this.v1 = v1;
-        this.mat = mat || new ColourMaterial(255, 0, 0);
+        this.mat = mat || new XTestMaterial();
+    }
+
+    get length() {
+        return Math.sqrt(Math.abs(this.v1.x-this.v0.x)**2 + Math.abs(this.v1.y-this.v0.y)**2);
+    };
+
+    get material() {
+        return this.mat;
+    }
+
+    doHit(r: IRay): HitAction {
+        return {
+            type: HitActionType.Render
+        };
     }
 
     // TODO Override this in all subclasses returning new class
@@ -128,50 +161,37 @@ class PortalPlane extends Plane {
         this.rc = rc;
         this.x0 = x0;
         this.x1 = x1;
-        this.mat = new PortalMaterial(rc, this);
+    }
+
+    get opLength() { return Math.sqrt(Math.abs(this.x1.x-this.x0.x)**2 + Math.abs(this.x1.y-this.x0.y)**2); }
+
+    doHit(r: IRay) {
+        let [src, angle] = this.translate(r.px, r.angle);
+
+        return <HitAction>{
+            type: HitActionType.Rewrite,
+            rewrite: { src, angle }
+        }
+    }
+
+    /** Given a plane X and angle, calculate an output vector and angle */
+    translate(px: number, angle: number): [Vect, number] {
+        // Calculate output vector and translate angle from input px and angle
+        // Calculate portal plane angle
+        let ppa = Math.atan2(this.v1.y - this.v0.y, this.v1.x - this.v0.x);
+        // Calculate output plane angle
+        let opa = Math.atan2(this.x1.y - this.x0.y, this.x1.x - this.x0.x);
+        // Delta angle in degs
+        let delta = (ppa - opa) * (180 / Math.PI);
+        // calculate output plane x
+        let opx = (px / this.length) * this.opLength;
+        // Translate output hit vector
+        let ov = new Vect(this.x0.x + Math.sin(opa+(90*Math.PI/180))*opx, this.x0.y - Math.cos(opa+(90*Math.PI/180))*opx);
+        return [ov, angle + delta];
     }
 
     // TODO Override this in all subclasses returning new class
     addVect = (v: Vect) => new PortalPlane(this.rc, this.v0.add(v), this.v1.add(v), this.x0, this.x1);
-}
-
-class PortalMaterial implements IMaterial {
-    raycast: Raycast;
-    pp: PortalPlane;
-
-    constructor(raycast: Raycast, pp: PortalPlane) {
-        this.raycast = raycast;
-        this.pp = pp;
-    }
-
-    getStripe(r?: Ray): Colour[] {
-        if(typeof(r) === 'undefined') return [new Colour(0,0xff,0)];
-
-        // TODO determine relative locations
-        // Translate angle
-        // Calculate portal plane angle
-        let ppa = Math.atan2(this.pp.v1.y - this.pp.v0.y, this.pp.v1.x - this.pp.v0.x);
-        // Calculate output plane angle
-        let opa = Math.atan2(this.pp.x1.y - this.pp.x0.y, this.pp.x1.x - this.pp.x0.x);
-        // Delta angle in degs
-        let delta = (ppa - opa) * (180 / Math.PI);
-        // Translate output hit vector
-        let ov = new Vect(this.pp.x0.x + Math.sin(opa+(90*Math.PI/180))*r.px, this.pp.x0.y - Math.cos(opa+(90*Math.PI/180))*r.px);
-        
-        let hit = this.raycast.sendRay(ov, r.angle + delta); // TODO relative location on output plane and send ray from there
-        if(!hit) return [new Colour(0, 0, 0)];
-        return hit.plane.mat.getStripe(hit); // TODO calculate where on the inner portal object was hit
-    }
-}
-
-class MeshPortal extends MeshBase implements IMesh {
-    constructor(rc: Raycast, orig: Vect, dst: Vect, w: number) {
-        super();
-        this.origin = orig;
-        this.planes = [
-            new PortalPlane(rc, orig, orig.add(new Vect(w, 0)), dst, dst.add(new Vect(w, 0)))
-        ];
-    }
 }
 
 const KEY_W = 87;
@@ -179,7 +199,8 @@ const KEY_A = 65;
 const KEY_S = 83;
 const KEY_D = 68;
 const MOVEMENT = .1;
-const RENDER_DISTANCE = 256;
+const RENDER_DISTANCE = 128;
+const MAX_RECURSION = 8;
 
 const MAP_SCALE = 32;
 const MAP_BLIP = 1;
@@ -212,14 +233,25 @@ const getLineIntersection = (p0: Vect,
 
 class Raycast {
     meshes: IMesh[] = [
-        new MeshCube(new Vect(5, 5), 1, 1),
+        new MeshCube(new Vect(0, 5), 1, 1),
+        new MeshCube(new Vect(2, 5), 1, 1),
+        new MeshCube(new Vect(4, 5), 1, 1),
+        new MeshCube(new Vect(8, 5), 1, 1),
+
         new MeshTriangle(new Vect(7, 5), 2, 2),
-        new MeshPlanar(new Vect(7, 2), [
-            new PortalPlane(this, new Vect(0, 0), new Vect(0, 2), new Vect(9, 10), new Vect(7, 10))
-        ])
+        new MeshPlanar(new Vect(0, 0), [
+            new PortalPlane(this, new Vect(0, 10), new Vect(15, 10), new Vect(0, 0), new Vect(15, 0)),
+            //new PortalPlane(this, new Vect(0, 0), new Vect(15, 0), new Vect(0, 10), new Vect(15, 10)),
+            //new PortalPlane(this, new Vect(0, 0), new Vect(15, 0), new Vect(0, 10), new Vect(15, 10)),
+
+            new PortalPlane(this, new Vect(0, 0), new Vect(0, 10), new Vect(15, 0), new Vect(15, 10)),
+           // new PortalPlane(this, new Vect(15, 0), new Vect(15, 10), new Vect(0, 0), new Vect(0, 10)),
+        ]),
+
+        new MeshTriangle(new Vect(5, 2), 2, 2)
     ];
-    pos = new Vect(0.0, 0.0);
-    angle = 0.0; // 0 to 360
+    pos = new Vect(2.0, 2.0);
+    angle = 180.0; // 0 to 360
     pov = 75;
     keys: {[k: number]: boolean} = {};
     canvas: HTMLCanvasElement;
@@ -256,16 +288,20 @@ class Raycast {
         this.mapCtx.clearRect(0, 0, this.map.width, this.map.height);
         for(let mesh of this.meshes) {
             for(let plane of mesh.absPlanes()) {
+                this.mapCtx.beginPath();
                 this.mapCtx.strokeStyle = plane.mat.getStripe()[0].rep();
                 this.mapCtx.moveTo(plane.v0.x* MAP_SCALE, plane.v0.y* MAP_SCALE);
                 this.mapCtx.lineTo(plane.v1.x* MAP_SCALE, plane.v1.y* MAP_SCALE);
                 this.mapCtx.stroke();
+                this.mapCtx.closePath()
 
                 if(plane instanceof PortalPlane) {
+                    this.mapCtx.beginPath()
                     this.mapCtx.strokeStyle = "#f0f";
                     this.mapCtx.moveTo(plane.x0.x* MAP_SCALE, plane.x0.y* MAP_SCALE);
                     this.mapCtx.lineTo(plane.x1.x* MAP_SCALE, plane.x1.y* MAP_SCALE);
                     this.mapCtx.stroke();
+                    this.mapCtx.closePath()
                 }
             }
             
@@ -310,14 +346,15 @@ class Raycast {
                 this.ctx.lineTo(x, (this.canvas.height / 2) + (height / 2));
                 this.ctx.stroke();
             }
+            this.ctx.closePath();
         }
 
         this.info.innerHTML = `x: ${this.pos.x} y: ${this.pos.y} a: ${this.angle}`;
     }
 
     // Returns a Ray if the ray hit something
-    sendRay(vect: Vect, angle: number): Ray | null {
-        let hits: Ray[] = [];
+    sendRay(vect: Vect, angle: number, distance = 0, levels = 0, returnHitAlways = false): IRay | null {
+        let hits: IRay[] = [];
         for(let mesh of this.meshes) {
             let i = 0;
             for(let plane of mesh.absPlanes()) {
@@ -327,14 +364,14 @@ class Raycast {
                 let hit = getLineIntersection(vect, checkEnd, plane.v0, plane.v1);
                 if(hit) {
                     // Calculate the hit position relative to the plane's surface 
-                    let px = Math.sqrt(Math.abs(hit.x - plane.v0.x)**2 + Math.abs(hit.y - plane.v0.y)**2);
+                    let px = Math.abs(Math.sqrt(Math.abs(hit.x - plane.v0.x)**2 + Math.abs(hit.y - plane.v0.y)**2));
                     hits.push({
                         src: vect,
                         angle,
                         dst: hit,
                         plane,
                         px,
-                        distance: Math.sqrt(Math.abs(hit.x - vect.x)**2 + Math.abs(hit.y - vect.y)**2),
+                        distance: distance + Math.sqrt(Math.abs(hit.x - vect.x)**2 + Math.abs(hit.y - vect.y)**2),
                         i
                     });
                 }
@@ -343,12 +380,23 @@ class Raycast {
         }
 
         if(hits.length < 1) {
-            this.drawMapLine(vect, new Vect(vect.x + Math.sin(angle * (Math.PI / 180))*0.5, vect.y - Math.cos(angle * (Math.PI / 180))*0.5));
+            // this.drawMapLine(vect, new Vect(vect.x + Math.sin(angle * (Math.PI / 180))*0.5, vect.y - Math.cos(angle * (Math.PI / 180))*0.5));
             return null;
         }
+
         let closestHit = hits.sort((h1, h2) => h1.distance - h2.distance)[0];
-        //this.drawMapLine(closestHit.src, closestHit.dst);
-        return closestHit;
+        if(returnHitAlways) return closestHit;
+
+        this.drawMapLine(closestHit.src, closestHit.dst);
+        // Determine action
+        let act = closestHit.plane.doHit(closestHit);
+        switch(act.type) {
+            case HitActionType.Render:
+                return closestHit;
+            case HitActionType.Rewrite:
+                if(closestHit.distance > RENDER_DISTANCE || levels + 1 > MAX_RECURSION) return null; // Ray has travelled too far
+                return this.sendRay(act.rewrite.src, act.rewrite.angle, closestHit.distance, levels + 1);
+        }
     }
 
     update() {
@@ -362,6 +410,15 @@ class Raycast {
         if(this.keys[KEY_S]) {
             this.pos.x -=  Math.sin((Math.PI / 180) * this.angle) * MOVEMENT;
             this.pos.y -= -Math.cos((Math.PI / 180) * this.angle) * MOVEMENT;
+        }
+        if(this.keys[KEY_W] || this.keys[KEY_S]) {
+            // Handle possible collision with portal
+            let hit = this.sendRay(this.pos, this.keys[KEY_W] ? this.angle : this.angle + 180, 0, 0, true);
+            if(hit && hit.plane instanceof PortalPlane && hit.distance <= MOVEMENT * 2) {
+                let [ov, angle] = (<PortalPlane>hit.plane).translate(hit.px, hit.angle);
+                this.pos = ov;
+                this.angle = this.keys[KEY_W] ? angle : angle + 180;
+            }
         }
         // Draw
         this.draw();

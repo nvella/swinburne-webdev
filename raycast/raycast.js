@@ -32,6 +32,11 @@ var Colour = /** @class */ (function () {
     }
     return Colour;
 }());
+var HitActionType;
+(function (HitActionType) {
+    HitActionType[HitActionType["Render"] = 0] = "Render";
+    HitActionType[HitActionType["Rewrite"] = 1] = "Rewrite";
+})(HitActionType || (HitActionType = {}));
 var ColourMaterial = /** @class */ (function (_super) {
     __extends(ColourMaterial, _super);
     function ColourMaterial() {
@@ -41,6 +46,12 @@ var ColourMaterial = /** @class */ (function (_super) {
     }
     return ColourMaterial;
 }(Colour));
+var XTestMaterial = /** @class */ (function () {
+    function XTestMaterial() {
+        this.getStripe = function (r) { return r ? [new Colour(Math.abs(255 - r.distance * 8), 255, Math.abs(r.distance * 8))] : [new Colour(255, 0, 0)]; };
+    }
+    return XTestMaterial;
+}());
 var Plane = /** @class */ (function () {
     function Plane(v0, v1, mat) {
         var _this = this;
@@ -48,8 +59,28 @@ var Plane = /** @class */ (function () {
         this.addVect = function (v) { return new Plane(_this.v0.add(v), _this.v1.add(v), _this.mat); };
         this.v0 = v0;
         this.v1 = v1;
-        this.mat = mat || new ColourMaterial(255, 0, 0);
+        this.mat = mat || new XTestMaterial();
     }
+    Object.defineProperty(Plane.prototype, "length", {
+        get: function () {
+            return Math.sqrt(Math.pow(Math.abs(this.v1.x - this.v0.x), 2) + Math.pow(Math.abs(this.v1.y - this.v0.y), 2));
+        },
+        enumerable: true,
+        configurable: true
+    });
+    ;
+    Object.defineProperty(Plane.prototype, "material", {
+        get: function () {
+            return this.mat;
+        },
+        enumerable: true,
+        configurable: true
+    });
+    Plane.prototype.doHit = function (r) {
+        return {
+            type: HitActionType.Render
+        };
+    };
     return Plane;
 }());
 var MeshBase = /** @class */ (function () {
@@ -111,54 +142,44 @@ var PortalPlane = /** @class */ (function (_super) {
         _this.rc = rc;
         _this.x0 = x0;
         _this.x1 = x1;
-        _this.mat = new PortalMaterial(rc, _this);
         return _this;
     }
-    return PortalPlane;
-}(Plane));
-var PortalMaterial = /** @class */ (function () {
-    function PortalMaterial(raycast, pp) {
-        this.raycast = raycast;
-        this.pp = pp;
-    }
-    PortalMaterial.prototype.getStripe = function (r) {
-        if (typeof (r) === 'undefined')
-            return [new Colour(0, 0xff, 0)];
-        // TODO determine relative locations
-        // Translate angle
+    Object.defineProperty(PortalPlane.prototype, "opLength", {
+        get: function () { return Math.sqrt(Math.pow(Math.abs(this.x1.x - this.x0.x), 2) + Math.pow(Math.abs(this.x1.y - this.x0.y), 2)); },
+        enumerable: true,
+        configurable: true
+    });
+    PortalPlane.prototype.doHit = function (r) {
+        var _a = this.translate(r.px, r.angle), src = _a[0], angle = _a[1];
+        return {
+            type: HitActionType.Rewrite,
+            rewrite: { src: src, angle: angle }
+        };
+    };
+    /** Given a plane X and angle, calculate an output vector and angle */
+    PortalPlane.prototype.translate = function (px, angle) {
+        // Calculate output vector and translate angle from input px and angle
         // Calculate portal plane angle
-        var ppa = Math.atan2(this.pp.v1.y - this.pp.v0.y, this.pp.v1.x - this.pp.v0.x);
+        var ppa = Math.atan2(this.v1.y - this.v0.y, this.v1.x - this.v0.x);
         // Calculate output plane angle
-        var opa = Math.atan2(this.pp.x1.y - this.pp.x0.y, this.pp.x1.x - this.pp.x0.x);
+        var opa = Math.atan2(this.x1.y - this.x0.y, this.x1.x - this.x0.x);
         // Delta angle in degs
         var delta = (ppa - opa) * (180 / Math.PI);
+        // calculate output plane x
+        var opx = (px / this.length) * this.opLength;
         // Translate output hit vector
-        var ov = new Vect(this.pp.x0.x + Math.sin(opa + (90 * Math.PI / 180)) * r.px, this.pp.x0.y - Math.cos(opa + (90 * Math.PI / 180)) * r.px);
-        var hit = this.raycast.sendRay(ov, r.angle + delta); // TODO relative location on output plane and send ray from there
-        if (!hit)
-            return [new Colour(0, 0, 0)];
-        return hit.plane.mat.getStripe(hit); // TODO calculate where on the inner portal object was hit
+        var ov = new Vect(this.x0.x + Math.sin(opa + (90 * Math.PI / 180)) * opx, this.x0.y - Math.cos(opa + (90 * Math.PI / 180)) * opx);
+        return [ov, angle + delta];
     };
-    return PortalMaterial;
-}());
-var MeshPortal = /** @class */ (function (_super) {
-    __extends(MeshPortal, _super);
-    function MeshPortal(rc, orig, dst, w) {
-        var _this = _super.call(this) || this;
-        _this.origin = orig;
-        _this.planes = [
-            new PortalPlane(rc, orig, orig.add(new Vect(w, 0)), dst, dst.add(new Vect(w, 0)))
-        ];
-        return _this;
-    }
-    return MeshPortal;
-}(MeshBase));
+    return PortalPlane;
+}(Plane));
 var KEY_W = 87;
 var KEY_A = 65;
 var KEY_S = 83;
 var KEY_D = 68;
 var MOVEMENT = .1;
-var RENDER_DISTANCE = 256;
+var RENDER_DISTANCE = 128;
+var MAX_RECURSION = 8;
 var MAP_SCALE = 32;
 var MAP_BLIP = 1;
 var mod = function (x, n) { return (x % n + n) % n; };
@@ -180,14 +201,21 @@ var getLineIntersection = function (p0, p1, p2, p3) {
 var Raycast = /** @class */ (function () {
     function Raycast(canvas, info, map) {
         this.meshes = [
-            new MeshCube(new Vect(5, 5), 1, 1),
+            new MeshCube(new Vect(0, 5), 1, 1),
+            new MeshCube(new Vect(2, 5), 1, 1),
+            new MeshCube(new Vect(4, 5), 1, 1),
+            new MeshCube(new Vect(8, 5), 1, 1),
             new MeshTriangle(new Vect(7, 5), 2, 2),
-            new MeshPlanar(new Vect(7, 2), [
-                new PortalPlane(this, new Vect(0, 0), new Vect(0, 2), new Vect(9, 10), new Vect(7, 10))
-            ])
+            new MeshPlanar(new Vect(0, 0), [
+                new PortalPlane(this, new Vect(0, 10), new Vect(15, 10), new Vect(0, 0), new Vect(15, 0)),
+                //new PortalPlane(this, new Vect(0, 0), new Vect(15, 0), new Vect(0, 10), new Vect(15, 10)),
+                //new PortalPlane(this, new Vect(0, 0), new Vect(15, 0), new Vect(0, 10), new Vect(15, 10)),
+                new PortalPlane(this, new Vect(0, 0), new Vect(0, 10), new Vect(15, 0), new Vect(15, 10)),
+            ]),
+            new MeshTriangle(new Vect(5, 2), 2, 2)
         ];
-        this.pos = new Vect(0.0, 0.0);
-        this.angle = 0.0; // 0 to 360
+        this.pos = new Vect(2.0, 2.0);
+        this.angle = 180.0; // 0 to 360
         this.pov = 75;
         this.keys = {};
         this.i = 0;
@@ -215,15 +243,19 @@ var Raycast = /** @class */ (function () {
             var mesh = _a[_i];
             for (var _b = 0, _c = mesh.absPlanes(); _b < _c.length; _b++) {
                 var plane = _c[_b];
+                this.mapCtx.beginPath();
                 this.mapCtx.strokeStyle = plane.mat.getStripe()[0].rep();
                 this.mapCtx.moveTo(plane.v0.x * MAP_SCALE, plane.v0.y * MAP_SCALE);
                 this.mapCtx.lineTo(plane.v1.x * MAP_SCALE, plane.v1.y * MAP_SCALE);
                 this.mapCtx.stroke();
+                this.mapCtx.closePath();
                 if (plane instanceof PortalPlane) {
+                    this.mapCtx.beginPath();
                     this.mapCtx.strokeStyle = "#f0f";
                     this.mapCtx.moveTo(plane.x0.x * MAP_SCALE, plane.x0.y * MAP_SCALE);
                     this.mapCtx.lineTo(plane.x1.x * MAP_SCALE, plane.x1.y * MAP_SCALE);
                     this.mapCtx.stroke();
+                    this.mapCtx.closePath();
                 }
             }
             // this.mapCtx.fillRect(entity.pos.x * MAP_SCALE, entity.pos.y * MAP_SCALE, MAP_SCALE, MAP_SCALE);
@@ -261,11 +293,15 @@ var Raycast = /** @class */ (function () {
                 this.ctx.lineTo(x, (this.canvas.height / 2) + (height / 2));
                 this.ctx.stroke();
             }
+            this.ctx.closePath();
         }
         this.info.innerHTML = "x: " + this.pos.x + " y: " + this.pos.y + " a: " + this.angle;
     };
     // Returns a Ray if the ray hit something
-    Raycast.prototype.sendRay = function (vect, angle) {
+    Raycast.prototype.sendRay = function (vect, angle, distance, levels, returnHitAlways) {
+        if (distance === void 0) { distance = 0; }
+        if (levels === void 0) { levels = 0; }
+        if (returnHitAlways === void 0) { returnHitAlways = false; }
         var hits = [];
         for (var _i = 0, _a = this.meshes; _i < _a.length; _i++) {
             var mesh = _a[_i];
@@ -276,14 +312,14 @@ var Raycast = /** @class */ (function () {
                 var hit = getLineIntersection(vect, checkEnd, plane.v0, plane.v1);
                 if (hit) {
                     // Calculate the hit position relative to the plane's surface 
-                    var px = Math.sqrt(Math.pow(Math.abs(hit.x - plane.v0.x), 2) + Math.pow(Math.abs(hit.y - plane.v0.y), 2));
+                    var px = Math.abs(Math.sqrt(Math.pow(Math.abs(hit.x - plane.v0.x), 2) + Math.pow(Math.abs(hit.y - plane.v0.y), 2)));
                     hits.push({
                         src: vect,
                         angle: angle,
                         dst: hit,
                         plane: plane,
                         px: px,
-                        distance: Math.sqrt(Math.pow(Math.abs(hit.x - vect.x), 2) + Math.pow(Math.abs(hit.y - vect.y), 2)),
+                        distance: distance + Math.sqrt(Math.pow(Math.abs(hit.x - vect.x), 2) + Math.pow(Math.abs(hit.y - vect.y), 2)),
                         i: i
                     });
                 }
@@ -291,12 +327,23 @@ var Raycast = /** @class */ (function () {
             }
         }
         if (hits.length < 1) {
-            this.drawMapLine(vect, new Vect(vect.x + Math.sin(angle * (Math.PI / 180)) * 0.5, vect.y - Math.cos(angle * (Math.PI / 180)) * 0.5));
+            // this.drawMapLine(vect, new Vect(vect.x + Math.sin(angle * (Math.PI / 180))*0.5, vect.y - Math.cos(angle * (Math.PI / 180))*0.5));
             return null;
         }
         var closestHit = hits.sort(function (h1, h2) { return h1.distance - h2.distance; })[0];
-        //this.drawMapLine(closestHit.src, closestHit.dst);
-        return closestHit;
+        if (returnHitAlways)
+            return closestHit;
+        this.drawMapLine(closestHit.src, closestHit.dst);
+        // Determine action
+        var act = closestHit.plane.doHit(closestHit);
+        switch (act.type) {
+            case HitActionType.Render:
+                return closestHit;
+            case HitActionType.Rewrite:
+                if (closestHit.distance > RENDER_DISTANCE || levels + 1 > MAX_RECURSION)
+                    return null; // Ray has travelled too far
+                return this.sendRay(act.rewrite.src, act.rewrite.angle, closestHit.distance, levels + 1);
+        }
     };
     Raycast.prototype.update = function () {
         // Handle input
@@ -311,6 +358,15 @@ var Raycast = /** @class */ (function () {
         if (this.keys[KEY_S]) {
             this.pos.x -= Math.sin((Math.PI / 180) * this.angle) * MOVEMENT;
             this.pos.y -= -Math.cos((Math.PI / 180) * this.angle) * MOVEMENT;
+        }
+        if (this.keys[KEY_W] || this.keys[KEY_S]) {
+            // Handle possible collision with portal
+            var hit = this.sendRay(this.pos, this.keys[KEY_W] ? this.angle : this.angle + 180, 0, 0, true);
+            if (hit && hit.plane instanceof PortalPlane && hit.distance <= MOVEMENT * 2) {
+                var _a = hit.plane.translate(hit.px, hit.angle), ov = _a[0], angle = _a[1];
+                this.pos = ov;
+                this.angle = this.keys[KEY_W] ? angle : angle + 180;
+            }
         }
         // Draw
         this.draw();
