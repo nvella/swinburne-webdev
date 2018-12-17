@@ -201,22 +201,11 @@ var getLineIntersection = function (p0, p1, p2, p3) {
 var Raycast = /** @class */ (function () {
     function Raycast(canvas, info, map) {
         this.meshes = [
-            new MeshCube(new Vect(0, 5), 1, 1),
-            new MeshCube(new Vect(2, 5), 1, 1),
-            new MeshCube(new Vect(4, 5), 1, 1),
-            new MeshCube(new Vect(8, 5), 1, 1),
-            new MeshTriangle(new Vect(7, 5), 2, 2),
-            new MeshPlanar(new Vect(0, 0), [
-                new PortalPlane(this, new Vect(0, 10), new Vect(15, 10), new Vect(0, 0), new Vect(15, 0)),
-                //new PortalPlane(this, new Vect(0, 0), new Vect(15, 0), new Vect(0, 10), new Vect(15, 10)),
-                //new PortalPlane(this, new Vect(0, 0), new Vect(15, 0), new Vect(0, 10), new Vect(15, 10)),
-                new PortalPlane(this, new Vect(0, 0), new Vect(0, 10), new Vect(15, 0), new Vect(15, 10)),
-            ]),
-            new MeshTriangle(new Vect(5, 2), 2, 2)
+            new MeshCube(new Vect(2, 2), 1, 1)
         ];
-        this.pos = new Vect(2.0, 2.0);
-        this.angle = 180.0; // 0 to 360
-        this.pov = 75;
+        this.pos = new Vect(5.0, 3.0);
+        this.angle = 0; // 0 to 360
+        this.fov = 60;
         this.keys = {};
         this.i = 0;
         this.canvas = canvas;
@@ -264,10 +253,10 @@ var Raycast = /** @class */ (function () {
         this.drawMapBlip(this.pos);
         this.mapCtx.beginPath();
         this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
-        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle - this.pov / 2))) * MAP_SCALE, (this.pos.y - Math.cos((Math.PI / 180) * (this.angle - this.pov / 2))) * MAP_SCALE);
+        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle - this.fov / 2))) * MAP_SCALE, (this.pos.y - Math.cos((Math.PI / 180) * (this.angle - this.fov / 2))) * MAP_SCALE);
         this.mapCtx.stroke();
         this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
-        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle + this.pov / 2))) * MAP_SCALE, (this.pos.y - Math.cos((Math.PI / 180) * (this.angle + this.pov / 2))) * MAP_SCALE);
+        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle + this.fov / 2))) * MAP_SCALE, (this.pos.y - Math.cos((Math.PI / 180) * (this.angle + this.fov / 2))) * MAP_SCALE);
         this.mapCtx.stroke();
         this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
         this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * this.angle)) * MAP_SCALE, (this.pos.y - Math.cos((Math.PI / 180) * this.angle)) * MAP_SCALE);
@@ -282,10 +271,12 @@ var Raycast = /** @class */ (function () {
             this.ctx.lineTo(x, this.canvas.height);
             this.ctx.stroke();
             // Send ray
-            var relAngle = (this.angle - this.pov / 2) + ((this.pov / this.canvas.width) * x);
-            var ray = this.sendRay(this.pos, relAngle);
+            var hIndex = (x / (this.canvas.width - 1)) * 2 - 1;
+            var relAngle = ((this.fov / this.canvas.width) * x) - this.fov / 2;
+            var absAngle = this.angle + relAngle;
+            var ray = this.sendRay(this.pos, absAngle, 0, 0, false, true);
             if (ray) {
-                var height = this.canvas.height / ray.distance;
+                var height = this.canvas.height / (ray.distance * Math.cos(relAngle * (Math.PI / 180)));
                 var stripe = ray.plane.mat.getStripe(ray);
                 this.ctx.strokeStyle = (stripe[0].mul(ray.i < 2 ? 1 : 0.8)).rep();
                 this.ctx.beginPath();
@@ -298,10 +289,11 @@ var Raycast = /** @class */ (function () {
         this.info.innerHTML = "x: " + this.pos.x + " y: " + this.pos.y + " a: " + this.angle;
     };
     // Returns a Ray if the ray hit something
-    Raycast.prototype.sendRay = function (vect, angle, distance, levels, returnHitAlways) {
+    Raycast.prototype.sendRay = function (vect, angle, distance, levels, returnHitAlways, drawDebug) {
         if (distance === void 0) { distance = 0; }
         if (levels === void 0) { levels = 0; }
         if (returnHitAlways === void 0) { returnHitAlways = false; }
+        if (drawDebug === void 0) { drawDebug = true; }
         var hits = [];
         for (var _i = 0, _a = this.meshes; _i < _a.length; _i++) {
             var mesh = _a[_i];
@@ -333,7 +325,8 @@ var Raycast = /** @class */ (function () {
         var closestHit = hits.sort(function (h1, h2) { return h1.distance - h2.distance; })[0];
         if (returnHitAlways)
             return closestHit;
-        this.drawMapLine(closestHit.src, closestHit.dst);
+        if (drawDebug)
+            this.drawMapLine(closestHit.src, closestHit.dst);
         // Determine action
         var act = closestHit.plane.doHit(closestHit);
         switch (act.type) {

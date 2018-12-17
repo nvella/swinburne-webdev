@@ -233,26 +233,11 @@ const getLineIntersection = (p0: Vect,
 
 class Raycast {
     meshes: IMesh[] = [
-        new MeshCube(new Vect(0, 5), 1, 1),
-        new MeshCube(new Vect(2, 5), 1, 1),
-        new MeshCube(new Vect(4, 5), 1, 1),
-        new MeshCube(new Vect(8, 5), 1, 1),
-
-        new MeshTriangle(new Vect(7, 5), 2, 2),
-        new MeshPlanar(new Vect(0, 0), [
-            new PortalPlane(this, new Vect(0, 10), new Vect(15, 10), new Vect(0, 0), new Vect(15, 0)),
-            //new PortalPlane(this, new Vect(0, 0), new Vect(15, 0), new Vect(0, 10), new Vect(15, 10)),
-            //new PortalPlane(this, new Vect(0, 0), new Vect(15, 0), new Vect(0, 10), new Vect(15, 10)),
-
-            new PortalPlane(this, new Vect(0, 0), new Vect(0, 10), new Vect(15, 0), new Vect(15, 10)),
-           // new PortalPlane(this, new Vect(15, 0), new Vect(15, 10), new Vect(0, 0), new Vect(0, 10)),
-        ]),
-
-        new MeshTriangle(new Vect(5, 2), 2, 2)
+        new MeshCube(new Vect(2, 2), 1, 1)
     ];
-    pos = new Vect(2.0, 2.0);
-    angle = 180.0; // 0 to 360
-    pov = 75;
+    pos = new Vect(5.0, 3.0);
+    angle = 0; // 0 to 360
+    fov = 60;
     keys: {[k: number]: boolean} = {};
     canvas: HTMLCanvasElement;
     info: HTMLDivElement;
@@ -311,13 +296,15 @@ class Raycast {
         this.drawMapBlip(this.pos);
         this.mapCtx.beginPath();
         this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
-        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle - this.pov / 2))) * MAP_SCALE, 
-                           (this.pos.y - Math.cos((Math.PI / 180) * (this.angle - this.pov / 2))) * MAP_SCALE);
+        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle - this.fov / 2))) * MAP_SCALE, 
+                           (this.pos.y - Math.cos((Math.PI / 180) * (this.angle - this.fov / 2))) * MAP_SCALE);
         this.mapCtx.stroke();
+
         this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
-        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle + this.pov / 2))) * MAP_SCALE, 
-                           (this.pos.y - Math.cos((Math.PI / 180) * (this.angle + this.pov / 2))) * MAP_SCALE);
+        this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * (this.angle + this.fov / 2))) * MAP_SCALE, 
+                           (this.pos.y - Math.cos((Math.PI / 180) * (this.angle + this.fov / 2))) * MAP_SCALE);
         this.mapCtx.stroke();
+
         this.mapCtx.moveTo(this.pos.x * MAP_SCALE, this.pos.y * MAP_SCALE);
         this.mapCtx.lineTo((this.pos.x + Math.sin((Math.PI / 180) * this.angle)) * MAP_SCALE, 
                            (this.pos.y - Math.cos((Math.PI / 180) * this.angle)) * MAP_SCALE);
@@ -334,11 +321,13 @@ class Raycast {
             this.ctx.stroke();
 
             // Send ray
-            let relAngle = (this.angle - this.pov / 2) + ((this.pov / this.canvas.width) * x);
-            let ray = this.sendRay(this.pos, relAngle);
+            let hIndex = (x/(this.canvas.width - 1))*2 - 1;
+            let relAngle = ((this.fov / this.canvas.width) * x) - this.fov/2;
+            let absAngle = this.angle + relAngle;
+            let ray = this.sendRay(this.pos, absAngle, 0, 0, false, true);
             
             if(ray) {
-                let height = this.canvas.height / ray.distance;
+                let height = this.canvas.height / (ray.distance * Math.cos(relAngle * (Math.PI / 180)));
                 let stripe = ray.plane.mat.getStripe(ray);
                 this.ctx.strokeStyle = (stripe[0].mul(ray.i < 2 ? 1 : 0.8)).rep();
                 this.ctx.beginPath();
@@ -348,12 +337,13 @@ class Raycast {
             }
             this.ctx.closePath();
         }
-
+        
         this.info.innerHTML = `x: ${this.pos.x} y: ${this.pos.y} a: ${this.angle}`;
+
     }
 
     // Returns a Ray if the ray hit something
-    sendRay(vect: Vect, angle: number, distance = 0, levels = 0, returnHitAlways = false): IRay | null {
+    sendRay(vect: Vect, angle: number, distance = 0, levels = 0, returnHitAlways = false, drawDebug = true): IRay | null {
         let hits: IRay[] = [];
         for(let mesh of this.meshes) {
             let i = 0;
@@ -387,7 +377,7 @@ class Raycast {
         let closestHit = hits.sort((h1, h2) => h1.distance - h2.distance)[0];
         if(returnHitAlways) return closestHit;
 
-        this.drawMapLine(closestHit.src, closestHit.dst);
+        if(drawDebug) this.drawMapLine(closestHit.src, closestHit.dst);
         // Determine action
         let act = closestHit.plane.doHit(closestHit);
         switch(act.type) {
