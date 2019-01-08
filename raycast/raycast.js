@@ -9,6 +9,41 @@ var __extends = (this && this.__extends) || (function () {
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = y[op[0] & 2 ? "return" : op[0] ? "throw" : "next"]) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [0, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
 var Vect = /** @class */ (function () {
     function Vect(x, y) {
         var _this = this;
@@ -46,11 +81,64 @@ var ColourMaterial = /** @class */ (function (_super) {
     }
     return ColourMaterial;
 }(Colour));
+var TextureMaterial = /** @class */ (function () {
+    function TextureMaterial(texture) {
+        this.texture = texture;
+    }
+    TextureMaterial.prototype.getStripe = function (r) {
+        var stripe = [];
+        for (var y = 0; y < this.texture.height; y++) {
+            stripe.push(this.texture.getPixel(Math.floor((r.px / r.plane.length) * this.texture.width), y));
+        }
+        return stripe;
+    };
+    return TextureMaterial;
+}());
 var XTestMaterial = /** @class */ (function () {
     function XTestMaterial() {
         this.getStripe = function (r) { return r ? [new Colour(Math.abs(255 - r.distance * 8), 255, Math.abs(r.distance * 8))] : [new Colour(255, 0, 0)]; };
     }
     return XTestMaterial;
+}());
+var Texture = /** @class */ (function () {
+    function Texture(filename) {
+        this.imgData = null;
+        this.path = filename;
+        this.img = new Image();
+    }
+    Texture.prototype.load = function () {
+        var _this = this;
+        return new Promise(function (resolve) {
+            _this.img = new Image();
+            _this.img.crossOrigin = "Anonymous";
+            _this.img.src = _this.path;
+            _this.img.onload = function () {
+                var canvas = document.createElement('canvas');
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(_this.img, 0, 0);
+                _this.imgData = ctx.getImageData(0, 0, _this.img.width, _this.img.height).data;
+                resolve();
+            };
+        });
+    };
+    Object.defineProperty(Texture.prototype, "width", {
+        get: function () {
+            return this.img.width;
+        },
+        enumerable: true,
+        configurable: true
+    });
+    Object.defineProperty(Texture.prototype, "height", {
+        get: function () {
+            return this.img.height;
+        },
+        enumerable: true,
+        configurable: true
+    });
+    Texture.prototype.getPixel = function (x, y) {
+        return new Colour(this.imgData[(this.img.width * y * 4) + (x * 4)], this.imgData[(this.img.width * y * 4) + (x * 4) + 1], this.imgData[(this.img.width * y * 4) + (x * 4) + 2]);
+    };
+    return Texture;
 }());
 var Plane = /** @class */ (function () {
     function Plane(v0, v1, mat) {
@@ -200,8 +288,13 @@ var getLineIntersection = function (p0, p1, p2, p3) {
 };
 var Raycast = /** @class */ (function () {
     function Raycast(canvas, info, map) {
+        this.text = new Texture('text.jpg');
         this.meshes = [
-            new MeshCube(new Vect(2, 2), 1, 1)
+            new MeshCube(new Vect(2, 2), 1, 1),
+            new MeshTriangle(new Vect(5, 5), 1, 1),
+            new MeshPlanar(new Vect(10, 10), [
+                new Plane(new Vect(1, 0), new Vect(0, 0), new TextureMaterial(this.text)),
+            ])
         ];
         this.pos = new Vect(5.0, 3.0);
         this.angle = 0; // 0 to 360
@@ -233,7 +326,7 @@ var Raycast = /** @class */ (function () {
             for (var _b = 0, _c = mesh.absPlanes(); _b < _c.length; _b++) {
                 var plane = _c[_b];
                 this.mapCtx.beginPath();
-                this.mapCtx.strokeStyle = plane.mat.getStripe()[0].rep();
+                this.mapCtx.strokeStyle = "red"; //plane.mat.getStripe()[0].rep();
                 this.mapCtx.moveTo(plane.v0.x * MAP_SCALE, plane.v0.y * MAP_SCALE);
                 this.mapCtx.lineTo(plane.v1.x * MAP_SCALE, plane.v1.y * MAP_SCALE);
                 this.mapCtx.stroke();
@@ -278,11 +371,14 @@ var Raycast = /** @class */ (function () {
             if (ray) {
                 var height = this.canvas.height / (ray.distance * Math.cos(relAngle * (Math.PI / 180)));
                 var stripe = ray.plane.mat.getStripe(ray);
-                this.ctx.strokeStyle = (stripe[0].mul(ray.i < 2 ? 1 : 0.8)).rep();
-                this.ctx.beginPath();
-                this.ctx.moveTo(x, (this.canvas.height / 2) - (height / 2));
-                this.ctx.lineTo(x, (this.canvas.height / 2) + (height / 2));
-                this.ctx.stroke();
+                var div = height / stripe.length;
+                for (var y = 0; y < stripe.length; y++) {
+                    this.ctx.strokeStyle = stripe[y].rep();
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, (this.canvas.height / 2) - (height / 2) + (y * div));
+                    this.ctx.lineTo(x, (this.canvas.height / 2) - (height / 2) + (y * div) + div);
+                    this.ctx.stroke();
+                }
             }
             this.ctx.closePath();
         }
@@ -368,12 +464,25 @@ var Raycast = /** @class */ (function () {
         this.i++;
     };
     Raycast.prototype.start = function () {
-        var _this = this;
-        // Set draw interval
-        setInterval(function () { return _this.update(); }, 1000 / 60);
-        // Set input handlers
-        window.onkeyup = function (e) { _this.keys[e.keyCode] = false; };
-        window.onkeydown = function (e) { _this.keys[e.keyCode] = true; };
+        return __awaiter(this, void 0, void 0, function () {
+            var _this = this;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0: 
+                    // Load textures
+                    return [4 /*yield*/, this.text.load()];
+                    case 1:
+                        // Load textures
+                        _a.sent();
+                        // Set draw interval
+                        setInterval(function () { return _this.update(); }, 1000 / 60);
+                        // Set input handlers
+                        window.onkeyup = function (e) { _this.keys[e.keyCode] = false; };
+                        window.onkeydown = function (e) { _this.keys[e.keyCode] = true; };
+                        return [2 /*return*/];
+                }
+            });
+        });
     };
     return Raycast;
 }());

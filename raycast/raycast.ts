@@ -67,8 +67,65 @@ class ColourMaterial extends Colour implements IMaterial {
     getStripe = () => [this];
 }
 
+class TextureMaterial implements IMaterial {
+    private texture: Texture;
+    constructor(texture: Texture) {
+        this.texture = texture;
+    }
+
+    getStripe(r: IRay) {
+        let stripe: Colour[] = [];
+        for(let y = 0; y < this.texture.height; y++) {
+            stripe.push(this.texture.getPixel(Math.floor((r.px / r.plane.length) * this.texture.width), y));
+        }
+        return stripe;
+    }
+}
+
 class XTestMaterial implements IMaterial {
     getStripe = (r: IRay) => r ? [new Colour(Math.abs(255 - r.distance * 8), 255, Math.abs(r.distance * 8))] : [new Colour(255, 0, 0)];
+}
+
+class Texture {
+    private path: string;
+    img: HTMLImageElement;
+    imgData: Uint8ClampedArray = null as any;
+
+    constructor(filename: string) {
+        this.path = filename;
+        this.img = new Image();
+    }
+
+    load(): Promise<void> {
+        return new Promise<void>((resolve: () => any) => {
+            this.img = new Image();
+            this.img.crossOrigin = "Anonymous";
+            this.img.src = this.path;
+            this.img.onload = () => {
+                let canvas = document.createElement('canvas');
+                let ctx: CanvasRenderingContext2D = canvas.getContext('2d') as any;
+                ctx.drawImage(this.img, 0, 0);
+                this.imgData = ctx.getImageData(0, 0, this.img.width, this.img.height).data;
+                resolve();
+            }
+        });
+    }
+
+    get width(): number {
+        return this.img.width;
+    }
+
+    get height(): number {
+        return this.img.height;
+    }
+
+    getPixel(x: number, y: number) {
+        return new Colour(
+            this.imgData[(this.img.width * y * 4) + (x * 4)],
+            this.imgData[(this.img.width * y * 4) + (x * 4) + 1],
+            this.imgData[(this.img.width * y * 4) + (x * 4) + 2]
+        );
+    }
 }
 
 class Plane {
@@ -232,8 +289,14 @@ const getLineIntersection = (p0: Vect,
 }
 
 class Raycast {
+    text = new Texture('text.jpg');
+
     meshes: IMesh[] = [
-        new MeshCube(new Vect(2, 2), 1, 1)
+        new MeshCube(new Vect(2, 2), 1, 1),
+        new MeshTriangle(new Vect(5, 5), 1, 1),
+        new MeshPlanar(new Vect(10, 10), [
+            new Plane(new Vect(1, 0), new Vect(0, 0), new TextureMaterial(this.text)),
+        ])
     ];
     pos = new Vect(5.0, 3.0);
     angle = 0; // 0 to 360
@@ -246,6 +309,7 @@ class Raycast {
 
     map: HTMLCanvasElement;
     mapCtx: CanvasRenderingContext2D;
+
 
     constructor(canvas: HTMLCanvasElement, info: HTMLDivElement, map: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -274,7 +338,7 @@ class Raycast {
         for(let mesh of this.meshes) {
             for(let plane of mesh.absPlanes()) {
                 this.mapCtx.beginPath();
-                this.mapCtx.strokeStyle = plane.mat.getStripe()[0].rep();
+                this.mapCtx.strokeStyle = "red"; //plane.mat.getStripe()[0].rep();
                 this.mapCtx.moveTo(plane.v0.x* MAP_SCALE, plane.v0.y* MAP_SCALE);
                 this.mapCtx.lineTo(plane.v1.x* MAP_SCALE, plane.v1.y* MAP_SCALE);
                 this.mapCtx.stroke();
@@ -329,11 +393,14 @@ class Raycast {
             if(ray) {
                 let height = this.canvas.height / (ray.distance * Math.cos(relAngle * (Math.PI / 180)));
                 let stripe = ray.plane.mat.getStripe(ray);
-                this.ctx.strokeStyle = (stripe[0].mul(ray.i < 2 ? 1 : 0.8)).rep();
-                this.ctx.beginPath();
-                this.ctx.moveTo(x, (this.canvas.height / 2) - (height / 2));
-                this.ctx.lineTo(x, (this.canvas.height / 2) + (height / 2));
-                this.ctx.stroke();
+                let div = height / stripe.length;
+                for(let y = 0; y < stripe.length; y++) {
+                    this.ctx.strokeStyle = stripe[y].rep();
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, (this.canvas.height / 2) - (height / 2) + (y * div));
+                    this.ctx.lineTo(x, (this.canvas.height / 2) - (height / 2) + (y * div) + div);
+                    this.ctx.stroke();
+                }
             }
             this.ctx.closePath();
         }
@@ -418,7 +485,9 @@ class Raycast {
         this.i++;
     }
 
-    start() {
+    async start() {
+        // Load textures
+        await this.text.load();
         // Set draw interval
         setInterval(() => this.update(), 1000 / 60);
         // Set input handlers
