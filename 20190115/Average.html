@@ -1,0 +1,24 @@
+<html>
+    <body>
+        <h1>Average calculator</h1>
+        <div><span>Input: </span><input id="input1"/></div>
+        <button onclick="calc()">Add value</button>
+        <div>
+            <p>Values:</p>
+            <ul id="valList">
+                
+            </ul>
+        </div>
+        <div><span>Average: </span><span id="res"></span></div>
+        <script>
+            let vals = [];
+            function calc() {
+                let input1 = parseInt(document.getElementById('input1').value);
+                vals.push(input1);
+                document.getElementById('valList').innerHTML += "<li>" + input1 + "</li>";
+                let avg = vals.reduce((prev, cur) => prev + cur) / vals.length;
+                document.getElementById('res').innerHTML = avg.toString();
+            }
+        </script>
+    </body>
+</html>
