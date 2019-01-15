@@ -1,0 +1,31 @@
+<html>
+    <body>
+        <div><span>Input 1: </span><input id="input1"/></div>
+        <div><span>Operator: </span><input id="op"/></div>
+        <div><span>Input 2: </span><input id="input2"/></div>
+        <button onclick="calc()">Calculate</button>
+        <div><span>Result: </span><span id="res"></span></div>
+        <script>
+            function calc() {
+                let input1 = parseInt(document.getElementById('input1').value);
+                let input2 = parseInt(document.getElementById('input2').value);
+                let res = 0;
+                switch(document.getElementById('op').value) {
+                    case '+':
+                        res = input1 + input2;
+                        break;
+                    case '-':
+                        res = input1 - input2;
+                        break;
+                    case '*':
+                        res = input1 * input2;
+                        break;
+                    case '/':
+                        res = input1 / input2;
+                        break;
+                }
+                document.getElementById('res').innerHTML = res.toString();
+            }
+        </script>
+    </body>
+</html>
