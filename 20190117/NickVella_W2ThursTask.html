@@ -1,0 +1,94 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+</head>
+<body>
+<h3>For the following convert/create JS eventhandlers</h3>
+<hr>
+<p>Clicking the button will pop up an alert box</p>
+<button id="btn_1">Click Me!</button>
+
+<hr>
+
+<p>Change background of fields to focus and back to white when unfocused</p>
+First name: <input type="text" id="fname"><br>
+Last name: <input type="text" id="lname">
+
+<hr>
+<p>Make the mouse alert <em>SQUEEK!</em> when it is double clicked</p>
+<img id="mouse" src="https://cdn.images.express.co.uk/img/dynamic/130/590x/secondary/A-mouse-1028634.jpg" width = "15%">
+<hr>
+
+<p>Donkey gets bigger when moused over.  Make it go back to original size and say, in an alert, <em>hee haw</em> on mouse leave.</p>
+<img id="donkey" src="http://www.livescience.com/images/i/000/082/414/original/donkey-face.jpg" width="15%" onmouseenter="donkey(this.id)" onmouseleave="donkey_reset(this.id)"/>
+
+<hr>
+<p>When the word <em>grow</em> (case-sensitive) is typed into the text field, the muskrat grows (width = 50%).  When the word <em>shrink</em> (case-insensitive) is
+in the text field the muskrat shrinks (width = 5%).  The reset button resets the muskrat's size</p>
+<img id="muskrat" src="http://woodstream.scene7.com/is/image/woodstream/hh-us-lc-muskrat-facts-general" width="15%"><br>
+<input id="muskrat_tf" type="text" maxlength="50" onkeyup="sizeRat(this.id)" />
+<button id="muskrat_reset">Reset</button>
+
+<hr>
+<p>On this page whenever the <em>q</em> key is pressed, the donkey and the mouse swap places</p>
+<hr>
+
+<h3>Bonus!</h3>
+<p>Write some HTML and create a <em>custom event</em> that manipulates the DOM. Show me once you're done and explain your code.
+
+<script>
+    // Task 1, button event handler
+    document.getElementById('btn_1').addEventListener("click", () => alert("Click event fired."));
+
+    // Task 2, field focus and unfocus
+    const handleFocus = (e) => e.target.style.backgroundColor = 'red';
+    const handleUnfocus = (e) => e.target.style.backgroundColor = 'white';
+    document.getElementById('fname').addEventListener("focus", handleFocus);
+    document.getElementById('lname').addEventListener("focus", handleFocus);
+    document.getElementById('fname').addEventListener("blur", handleUnfocus);
+    document.getElementById('lname').addEventListener("blur", handleUnfocus);
+
+    // Task 3 - mouse
+    document.getElementById('mouse').addEventListener("dblclick", () => alert("SQUEEK!"));
+
+    // Task 4 - donkey
+    function donkey(id) {
+        document.getElementById(id).style.width = '100%';
+        document.getElementById(id).style.height = '100%';
+    }
+    function donkey_reset(id) {
+        document.getElementById(id).style.width = '15%';
+        document.getElementById(id).style.height = '15%';
+        alert("hee haw");
+    }
+
+    // Task 5 - muskrat
+    function sizeRat(id) {
+        let text = document.getElementById(id).value || '';
+        if(text === "grow") {
+            document.getElementById("muskrat").style.width = "50%";
+            document.getElementById("muskrat").style.height = "50%";
+        } else if(text.toLowerCase() === "shrink") {
+            document.getElementById("muskrat").style.width = "5%";
+            document.getElementById("muskrat").style.height = "5%";
+        }
+    }
+    document.getElementById('muskrat_reset').addEventListener("click", () => {
+        document.getElementById("muskrat").style.width = "15%";
+        document.getElementById("muskrat").style.height = "15%";
+    });
+
+    // Task 6 - donkey and mouse swap
+    window.addEventListener("keydown", (ev) => {
+        if(ev.key === "q") {
+            let srcA = document.getElementById("mouse").src;
+            let srcB = document.getElementById("donkey").src;
+            document.getElementById("mouse").src = srcB;
+            document.getElementById("donkey").src = srcA;
+        }
+    })
+</script>
+
+</body>
+</html>
