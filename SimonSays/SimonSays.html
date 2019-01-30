@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Simon Says</title>
+
+        <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+        <link rel="stylesheet" href="css/SimonSays.css">
+    </head>
+
+    <body onload = "createLevel(1)">
+        <h2>Simon Says Game</h2>
+        <h3 id="level">Level: 0</h3>
+        <div id="simon">
+        </div>
+        <hr>
+        <div id="gameboard">
+        </div>
+        <hr>
+        <h1 id="state"></h1>
+        <div class="controls"><button id="playAgainBtn">Play again</button></div>
+        <script src="js/SimonSays.js"></script>
+    </body>
+</html>
