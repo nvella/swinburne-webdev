@@ -1,0 +1,52 @@
+<html>
+    <head>
+        <title>Pocketmon Admin Panel - List</title>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <ul class="navbar">
+            <li>Pocketmon Admin Panel</li>
+            <a href="index.html"><li>Home</li></a>
+            <a href="list.html"><li>List</li></a>
+            <a href="create.html"><li>Create</li></a>
+        </ul>
+        
+        <div class="content">
+            <h1>List Pocketmons</h1>
+            <input type="checkbox" id="sort"> Sort
+            <div id="loader">
+                <h2>Loading...</h2>
+                <img src="loading.gif" width="200"/>
+            </div>
+            <ul id="list" class="pkmn-list">
+                
+            </ul>
+        </div>
+       
+        <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8=" crossorigin="anonymous"></script>
+        <script src="pkmn.js"></script>
+        <script>
+            const render = () => listPocketmons().then(pkmns => {
+                if($('#sort')[0].checked) pkmns.sort((p1, p2) => p1.name > p2.name ? 1: -1);
+                for(let pkmn of pkmns) {
+                    $('#list').append(`
+                    <li>
+                        <div class="name">${pkmn.name}</div>
+                        <div class="type">${pkmn.type}</div>
+                    </li>
+                    `);
+                }
+                $('#loader').css('display', 'none');
+                $('#list').css('display', 'block');
+            });
+            
+            render();
+            $('#sort').click(() => {
+                $('#loader').css('display', 'block');
+                $('#list').css('display', 'none');
+                $('#list').html('');
+                render()
+            });
+        </script>
+    </body>
+</html>

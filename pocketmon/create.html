@@ -1,0 +1,49 @@
+<html>
+    <head>
+        <title>Pocketmon Admin Panel</title>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <ul class="navbar">
+            <li>Pocketmon Admin Panel</li>
+            <a href="index.html"><li>Home</li></a>
+            <a href="list.html"><li>List</li></a>
+            <a href="create.html"><li>Create</li></a>
+        </ul>
+        
+        <div class="content">
+            <h1>Submit a Pocketmon</h1>
+
+            <div class="form-input"><span>Name: </span><input id="pkmnName"/></div>
+            <div class="form-input"><span>Type: </span><input id="pkmnType"/></div>
+            <button class="submit-button" id="submit">Submit</button>
+            <div id="loader" style="display: none;">
+                <h2>Loading...</h2>
+                <img src="loading.gif" width="200"/>
+            </div>
+        </div>
+       
+        <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8=" crossorigin="anonymous"></script>
+        <script src="pkmn.js"></script>
+        <script>
+            $('#submit').click(async () => {
+                $('#submit').css('display', 'none');
+                $('#loader').css('display', 'block');
+
+                let pkmns = await listPocketmons();
+                if(pkmns.filter(pkmn => pkmn.name === $('#pkmnName').val())[0]) {
+                    $('#submit').css('display', 'block');
+                    $('#loader').css('display', 'none');
+                    return alert('That Pocketmon already exists!');
+                }
+
+                await createPocketmon({
+                    name: $('#pkmnName').val(),
+                    type: $('#pkmnType').val()
+                });
+                
+                window.location.href = 'list.html';
+            });
+        </script>
+    </body>
+</html>
