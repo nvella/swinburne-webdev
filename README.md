@@ -8,3 +8,4 @@
 - Tic-tac-toe, player v. cpu or cpu v. cpu - [view source](https://github.com/nvella/swinburne-webdev/tree/master/20190122) [demo](https://nxk.io/swinburne-webdev/20190122/tictactoe.html)
 - Simon says - [view source](https://github.com/nvella/swinburne-webdev/tree/master/SimonSays) [demo](https://nxk.io/swinburne-webdev/SimonSays/SimonSays.html)
 - Star wars search - [view source](https://github.com/nvella/swinburne-webdev/tree/master/20190205) [demo](https://nxk.io/swinburne-webdev/20190205/index.html)
+- Pocketmon API - [view source](https://github.com/nvella/swinburne-webdev/tree/master/pocketmon) [demo](https://nxk.io/swinburne-webdev/pocketmon/index.html)
